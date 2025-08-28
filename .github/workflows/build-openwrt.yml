@@ -1,44 +1,52 @@
 name: Build OpenWRT Firmware
 
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:  # 允许手动触发
+  workflow_dispatch:  # 手动触发以控制Release创建（可修改为 push: branches: - main）
 
 jobs:
   build:
-    runs-on: ubuntu-latest  # 使用 Ubuntu 环境
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4  # 检出仓库代码
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget tar zstd build-essential qemu-img  # 安装 wget、tar、zstd 和 make 等工具
+          sudo apt-get install -y wget tar zstd build-essential gh  # 添加 gh CLI 用于 Release
 
       - name: Download ImageBuilder
         run: |
           wget https://downloads.immortalwrt.org/releases/24.10.2/targets/x86/64/immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64.tar.zst
-          # 可选：验证文件完整性，如果有 SHA256 校验文件，可添加 sha256sum 检查
 
       - name: Decompress ImageBuilder
         run: |
           tar -I zstd -xvf immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64.tar.zst
-          cd immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64  # 进入解压目录
+          cd immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64
+
+      - name: Copy Custom IPKs
+        run: |
+          cd immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64
+          mkdir -p packages  # 创建 packages 目录作为本地仓库
+          cp ../../custom-packages/*.ipk packages/ || true  # 复制自定义 IPK（忽略如果无文件）
 
       - name: Build Firmware
         run: |
           cd immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64
-          # 构建命令：PROFILE 为 x86-64 generic，PACKAGES 从 packages.txt 读取，FILES 为自定义目录
-          # 添加 ROOTFS_PARTSIZE=1024 设置根分区为1GB
-          # 如果无 packages.txt 或 files/，移除对应参数
           make image PROFILE="generic" PACKAGES="$(cat ../../packages.txt)" FILES="../../files/" ROOTFS_PARTSIZE=1024
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: openwrt-firmware
-          path: immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64/bin/targets/x86/64/*.img.gz  # 上传构建的固件文件
+          path: immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64/bin/targets/x86/64/*.img.gz
+
+      - name: Release Firmware
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # 使用默认 token
+        run: |
+          cd immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64/bin/targets/x86/64/
+          RELEASE_TAG="v$(date +%Y%m%d)"
+          gh release create $RELEASE_TAG --title "Firmware Build $RELEASE_TAG" --notes "Automated ImmortalWRT build with custom IPKs and configs."
+          gh release upload $RELEASE_TAG *.img.gz
