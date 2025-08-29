@@ -1,4 +1,3 @@
-```yaml
 name: Build OpenWRT Firmware
 
 on:
@@ -98,4 +97,3 @@ jobs:
             gh release create $RELEASE_TAG --title "Firmware Build $RELEASE_TAG" --notes "Automated ImmortalWRT build with custom IPKs and configs."
             gh release upload $RELEASE_TAG *.img.gz
           fi
-```
