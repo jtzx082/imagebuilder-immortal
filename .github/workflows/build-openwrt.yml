@@ -13,8 +13,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y wget tar zstd build-essential gh qemu-img  # 添加 gh CLI 用于 Release
+          sudo apt-get update  
+          sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)'
 
       - name: Download ImageBuilder
         run: |
