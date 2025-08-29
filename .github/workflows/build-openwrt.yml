@@ -1,7 +1,7 @@
 name: Build OpenWRT Firmware
 
 on:
-  workflow_dispatch:  # 手动触发以控制Release创建（可修改为 push: branches: - main）
+  workflow_dispatch:  # 手动触发以控制 Release 创建
 
 jobs:
   build:
@@ -13,8 +13,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update  
-          sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)'
+        sudo apt-get update  
+        sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)'
 
       - name: Download ImageBuilder
         run: |
@@ -28,8 +28,8 @@ jobs:
       - name: Copy Custom IPKs
         run: |
           cd immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64
-          mkdir -p packages  # 创建 packages 目录作为本地仓库
-          cp ../../custom-packages/*.ipk packages/ || true  # 复制自定义 IPK（忽略如果无文件）
+          mkdir -p packages
+          cp ../../custom-packages/*.ipk packages/ || true
 
       - name: Build Firmware
         run: |
@@ -44,9 +44,16 @@ jobs:
 
       - name: Release Firmware
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # 使用默认 token
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64/bin/targets/x86/64/
           RELEASE_TAG="v$(date +%Y%m%d)"
-          gh release create $RELEASE_TAG --title "Firmware Build $RELEASE_TAG" --notes "Automated ImmortalWRT build with custom IPKs and configs."
-          gh release upload $RELEASE_TAG *.img.gz
+          # 检查 Release 是否存在
+          if gh release view $RELEASE_TAG --repo $GITHUB_REPOSITORY >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists, uploading to existing release."
+            gh release upload $RELEASE_TAG *.img.gz --clobber
+          else
+            echo "Creating new release $RELEASE_TAG."
+            gh release create $RELEASE_TAG --title "Firmware Build $RELEASE_TAG" --notes "Automated ImmortalWRT build with custom IPKs and configs."
+            gh release upload $RELEASE_TAG *.img.gz
+          fi
