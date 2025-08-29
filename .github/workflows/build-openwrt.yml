@@ -1,3 +1,4 @@
+```yaml
 name: Build OpenWRT Firmware
 
 on:
@@ -13,8 +14,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update  
-          sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)'
+          sudo apt-get update
+          sudo apt-get install -y wget tar zstd build-essential gh
 
       - name: Download ImageBuilder
         run: |
@@ -30,11 +31,52 @@ jobs:
           cd immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64
           mkdir -p packages
           cp ../../custom-packages/*.ipk packages/ || true
+          # 调试：列出复制的 IPK 文件
+          echo "Custom IPKs in packages directory:"
+          ls -l packages/
+
+      - name: Prepare Custom Files and Packages
+        run: |
+          # 调试：显示工作目录
+          echo "Current directory: $(pwd)"
+          # 检查 packages.txt 是否存在
+          if [ -f ../../packages.txt ]; then
+            echo "packages.txt found, content:"
+            cat ../../packages.txt
+          else
+            echo "packages.txt not found, proceeding without additional packages."
+          fi
+          # 检查 files/ 目录和 uci-defaults 脚本
+          if [ -d ../../files ]; then
+            echo "files/ directory found, content:"
+            ls -lR ../../files/
+            # 确保 uci-defaults 脚本可执行
+            if [ -f ../../files/etc/uci-defaults/99-custom-config.sh ]; then
+              chmod +x ../../files/etc/uci-defaults/99-custom-config.sh
+              echo "Set executable permission for 99-custom-config.sh"
+            else
+              echo "Warning: 99-custom-config.sh not found in files/etc/uci-defaults/"
+            fi
+          else
+            echo "files/ directory not found, proceeding without custom files."
+          fi
 
       - name: Build Firmware
         run: |
           cd immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64
-          make image PROFILE="generic" PACKAGES="$(cat ../../packages.txt)" FILES="../../files/" ROOTFS_PARTSIZE=1024
+          # 使用绝对路径，确保参数正确传递
+          PACKAGES_PARAM=""
+          if [ -f ../../packages.txt ]; then
+            PACKAGES_PARAM="$(cat ../../packages.txt)"
+          fi
+          FILES_PARAM=""
+          if [ -d ../../files ]; then
+            FILES_PARAM="$GITHUB_WORKSPACE/files"
+          fi
+          make image PROFILE="generic" PACKAGES="$PACKAGES_PARAM" FILES="$FILES_PARAM" ROOTFS_PARTSIZE=1024
+          # 调试：列出生成的文件
+          echo "Generated firmware files:"
+          ls -l bin/targets/x86/64/
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -48,7 +90,6 @@ jobs:
         run: |
           cd immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64/bin/targets/x86/64/
           RELEASE_TAG="v$(date +%Y%m%d)"
-          # 检查 Release 是否存在
           if gh release view $RELEASE_TAG --repo $GITHUB_REPOSITORY >/dev/null 2>&1; then
             echo "Release $RELEASE_TAG already exists, uploading to existing release."
             gh release upload $RELEASE_TAG *.img.gz --clobber
@@ -57,3 +98,4 @@ jobs:
             gh release create $RELEASE_TAG --title "Firmware Build $RELEASE_TAG" --notes "Automated ImmortalWRT build with custom IPKs and configs."
             gh release upload $RELEASE_TAG *.img.gz
           fi
+```
