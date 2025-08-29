@@ -13,8 +13,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y wget tar zstd build-essential gh
+          sudo apt-get update  
+          sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)'
 
       - name: Download ImageBuilder
         run: |
