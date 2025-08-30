@@ -1,99 +1,42 @@
 name: Build OpenWRT Firmware
 
 on:
-  workflow_dispatch:  # 手动触发以控制 Release 创建
+  - push
+  - workflow_dispatch  # Allows manual triggering from GitHub UI
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: immortalwrt/imagebuilder:x86-64-openwrt-24.10.2
+      options: --user root  # Run as root to avoid permission issues during build
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        # This checks out your repo, where you can store custom config files if needed (e.g., .config or packages list)
 
-      - name: Install dependencies
+      - name: Prepare build environment
         run: |
-          sudo apt-get update  
-          sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)'
+          # Update any necessary dependencies inside the container if required
+          apt-get update && apt-get install -y sudo  # Ensure sudo is available if needed
+          # Optionally, copy custom configs from repo to the build dir
+          # cp .github/configs/myconfig .config  # Example: If you have a custom .config file in your repo
 
-      - name: Download ImageBuilder
+      - name: Build OpenWRT firmware
         run: |
-          wget https://downloads.immortalwrt.org/releases/24.10.2/targets/x86/64/immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64.tar.zst
+          # Run the ImageBuilder make command to build the firmware
+          # Customize PROFILE and PACKAGES as needed
+          # PROFILE: Device profile, e.g., 'generic' for x86-64
+          # PACKAGES: List of packages to include, e.g., 'luci luci-app-firewall'
+          # FILES: Directory for custom files to include in the image
+          make image PROFILE="generic" PACKAGES="luci luci-app-firewall" FILES="files/"
+          
+          # After build, the output files will be in bin/targets/x86/64/
 
-      - name: Decompress ImageBuilder
-        run: |
-          tar -I zstd -xvf immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64.tar.zst
-          cd immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64
-
-      - name: Copy Custom IPKs
-        run: |
-          cd immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64
-          mkdir -p packages
-          cp ../../custom-packages/*.ipk packages/ || true
-          # 调试：列出复制的 IPK 文件
-          echo "Custom IPKs in packages directory:"
-          ls -l packages/
-
-      - name: Prepare Custom Files and Packages
-        run: |
-          # 调试：显示工作目录
-          echo "Current directory: $(pwd)"
-          # 检查 packages.txt 是否存在
-          if [ -f ../../packages.txt ]; then
-            echo "packages.txt found, content:"
-            cat ../../packages.txt
-          else
-            echo "packages.txt not found, proceeding without additional packages."
-          fi
-          # 检查 files/ 目录和 uci-defaults 脚本
-          if [ -d ../../files ]; then
-            echo "files/ directory found, content:"
-            ls -lR ../../files/
-            # 确保 uci-defaults 脚本可执行
-            if [ -f ../../files/etc/uci-defaults/99-custom-config.sh ]; then
-              chmod +x ../../files/etc/uci-defaults/99-custom-config.sh
-              echo "Set executable permission for 99-custom-config.sh"
-            else
-              echo "Warning: 99-custom-config.sh not found in files/etc/uci-defaults/"
-            fi
-          else
-            echo "files/ directory not found, proceeding without custom files."
-          fi
-
-      - name: Build Firmware
-        run: |
-          cd immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64
-          # 使用绝对路径，确保参数正确传递
-          PACKAGES_PARAM=""
-          if [ -f ../../packages.txt ]; then
-            PACKAGES_PARAM="$(cat ../../packages.txt)"
-          fi
-          FILES_PARAM=""
-          if [ -d ../../files ]; then
-            FILES_PARAM="$GITHUB_WORKSPACE/files"
-          fi
-          make image PROFILE="generic" PACKAGES="$PACKAGES_PARAM" FILES="$FILES_PARAM" ROOTFS_PARTSIZE=1024
-          # 调试：列出生成的文件
-          echo "Generated firmware files:"
-          ls -l bin/targets/x86/64/
-
-      - name: Upload Artifact
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: openwrt-firmware
-          path: immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64/bin/targets/x86/64/*.img.gz
-
-      - name: Release Firmware
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cd immortalwrt-imagebuilder-24.10.2-x86-64.Linux-x86_64/bin/targets/x86/64/
-          RELEASE_TAG="v$(date +%Y%m%d)"
-          if gh release view $RELEASE_TAG --repo $GITHUB_REPOSITORY >/dev/null 2>&1; then
-            echo "Release $RELEASE_TAG already exists, uploading to existing release."
-            gh release upload $RELEASE_TAG *.img.gz --clobber
-          else
-            echo "Creating new release $RELEASE_TAG."
-            gh release create $RELEASE_TAG --title "Firmware Build $RELEASE_TAG" --notes "Automated ImmortalWRT build with custom IPKs and configs."
-            gh release upload $RELEASE_TAG *.img.gz
-          fi
+          path: bin/targets/x86/64/  # Upload the compiled firmware files
+          retention-days: 5  # Keep artifacts for 5 days
